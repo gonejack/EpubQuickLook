@@ -65,7 +65,16 @@ public struct PreviewHTMLBuilder {
                 styleLinks.append("<link rel=\"stylesheet\" href=\"\(Self.fileURLString(root: root, path: resolved))\">")
             }
 
-            let body = Self.blockRemoteResources(Self.stripDangerousTags(Self.extractBody(from: raw)))
+            var body = Self.blockRemoteResources(Self.stripDangerousTags(Self.extractBody(from: raw)))
+
+            // 앞쪽 표지 페이지는 헤더의 표지와 겹치므로 그림을 걷어내고,
+            // 그래서 아무것도 남지 않으면 그 페이지 자체를 건너뛴다.
+            if rawChapters.isEmpty {
+                body = Self.removeCoverImage(from: body, baseDir: baseDir,
+                                             coverPath: document.coverImagePath)
+                if Self.isEmptyPage(body) { continue }
+            }
+
             totalChars += body.count
             rawChapters.append((item.href, baseDir, body))
         }
@@ -115,16 +124,19 @@ public struct PreviewHTMLBuilder {
         }()
 
         var metaRows: [String] = []
-        func row(_ label: String, _ value: String) {
+        func row(_ label: String, _ value: String, _ key: String) {
             let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return }
-            metaRows.append("<div class=\"ql-meta-row\"><span>\(label)</span><b>\(Self.escape(trimmed))</b></div>")
+            metaRows.append("""
+            <div class="ql-meta-row ql-meta-\(key)"><span>\(label)</span><b>\(Self.escape(trimmed))</b></div>
+            """)
         }
-        row("지은이", document.authorText)
-        row("출판사", document.publisher)
-        row("출간일", document.date)
-        row("언어", document.language)
-        row("분량", "\(document.spine.count)개 문서")
+        // key는 좁은 폭에서 어떤 항목을 남길지 CSS로 고르기 위한 것이다.
+        row("지은이", document.authorText, "author")
+        row("출판사", document.publisher, "publisher")
+        row("출간일", document.date, "date")
+        row("언어", document.language, "language")
+        row("분량", "\(document.spine.count)개 문서", "count")
 
         // 목차: spine에 실제로 존재하는 항목만
         var tocItems: [String] = []
@@ -226,6 +238,53 @@ public struct PreviewHTMLBuilder {
                                            options: [.regularExpression, .caseInsensitive])
         }
         return out
+    }
+
+    /// 헤더에 이미 띄운 표지와 같은 그림을 본문에서 걷어낸다.
+    /// EPUB 첫 페이지는 대개 표지 이미지 한 장이라, 그대로 두면 같은 그림이 연달아 두 번 나온다.
+    static func removeCoverImage(from body: String, baseDir: String, coverPath: String?) -> String {
+        guard let coverPath else { return body }
+
+        func referencesCover(_ fragment: String) -> Bool {
+            let pattern = "(?:src|xlink:href)\\s*=\\s*[\"']([^\"']+)[\"']"
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+                return false
+            }
+            let ns = fragment as NSString
+            return regex.matches(in: fragment, range: NSRange(location: 0, length: ns.length))
+                .contains { match in
+                    let source = ns.substring(with: match.range(at: 1))
+                    return EPUBDocument.resolve(base: baseDir, relative: source) == coverPath
+                }
+        }
+
+        var out = body
+        // <img>는 태그만, SVG로 감싼 표지는 <svg> 블록째로 지운다.
+        for pattern in ["<img\\b[^>]*>", "<svg\\b[\\s\\S]*?</svg>"] {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+                continue
+            }
+            let ns = out as NSString
+            var result = ""
+            var last = 0
+            regex.enumerateMatches(in: out, range: NSRange(location: 0, length: ns.length)) { match, _, _ in
+                guard let match else { return }
+                let tag = ns.substring(with: match.range)
+                result += ns.substring(with: NSRange(location: last, length: match.range.location - last))
+                if !referencesCover(tag) { result += tag }
+                last = match.range.location + match.range.length
+            }
+            out = result + ns.substring(from: last)
+        }
+        return out
+    }
+
+    /// 그림도 글도 남지 않은 껍데기 페이지인지 확인한다.
+    static func isEmptyPage(_ body: String) -> Bool {
+        guard EPUBDocument.stripTags(body).isEmpty else { return false }
+        let hasVisual = body.range(of: "<(img|svg|image|video|audio)\\b",
+                                   options: [.regularExpression, .caseInsensitive]) != nil
+        return !hasVisual
     }
 
     /// 원격 리소스를 참조하는 속성을 무력화한다.
@@ -391,18 +450,51 @@ public struct PreviewHTMLBuilder {
       margin-top: 2rem; padding: 0.7rem 0.9rem; font-size: 0.85rem;
       color: var(--ql-dim); background: var(--ql-card); border-radius: 10px; text-align: center;
     }
-    /* Finder 미리보기 패널처럼 폭이 아주 좁을 때 */
+    /* 목차가 수십 개인 책에서 본문이 한참 아래로 밀리지 않도록 자체 스크롤.
+       아래쪽을 흐리게 처리해 더 많은 항목이 있다는 것을 알린다. */
+    .ql-toc ol {
+      max-height: 22rem; overflow-y: auto;
+      -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.6rem), transparent);
+    }
+
+    /*
+     * Finder 미리보기 패널처럼 폭이 좁을 때의 컴팩트 레이아웃.
+     * 이런 패널은 폭이 250pt 남짓이고 높이도 짧아서, 표지와 제목이 화면을 다 먹으면
+     * 정작 본문이 보이지 않는다. 표지를 작게 줄여 한 줄로 붙이고, 반복되는 라벨을
+     * 없앤 뒤, 남는 공간을 본문에 넘긴다. 파일명·용량은 Finder가 패널 아래에
+     * 따로 보여주므로 여기서 다시 강조할 이유가 없다.
+     */
     @media (max-width: 430px) {
-      .ql-wrap { padding: 1rem 0.85rem 2.5rem; }
+      .ql-wrap { padding: 0.9rem 0.8rem 2rem; }
       .ql-header {
-        flex-direction: column; align-items: center; text-align: center;
-        gap: 0.9rem; padding: 1rem 0.9rem;
+        flex-direction: row; align-items: flex-start; flex-wrap: nowrap;
+        gap: 0.75rem; padding: 0.75rem 0.8rem; margin-bottom: 1rem;
+        border-radius: 10px;
       }
-      .ql-cover { width: min(58%, 130px); max-height: 190px; }
-      .ql-headmeta { flex: none; width: 100%; }
-      .ql-headmeta h1 { font-size: 1.15rem; }
-      .ql-meta-row span { min-width: 0; margin-right: 0.4rem; }
-      .ql-toc { padding: 0.4rem 0.8rem 0.7rem; }
+      .ql-cover { width: 72px; max-height: 108px; border-radius: 4px; }
+      .ql-headmeta { flex: 1 1 auto; }
+      .ql-headmeta h1 {
+        font-size: 0.98rem; line-height: 1.4; margin: 0 0 0.3rem;
+        /* 긴 제목은 세 줄까지만 */
+        display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      /* 라벨을 떼고 가운뎃점으로 이어 붙여 한 덩어리로 만든다 */
+      .ql-meta-row { display: inline; font-size: 0.76rem; line-height: 1.45; }
+      .ql-meta-row span { display: none; }
+      .ql-meta-row b { font-weight: 400; color: var(--ql-dim); }
+      .ql-meta-row + .ql-meta-row::before { content: " · "; color: var(--ql-dim); }
+      /* 좁은 곳에서는 지은이 · 출간일 · 분량만 남긴다 */
+      .ql-meta-language, .ql-meta-publisher, .ql-desc { display: none; }
+
+      .ql-toc { padding: 0.3rem 0.7rem 0.55rem; margin-bottom: 1.2rem; border-radius: 9px; }
+      .ql-toc h2 { font-size: 0.7rem; margin: 0.45rem 0 0.3rem; }
+      .ql-toc ol { font-size: 0.8rem; padding-left: 1.1rem; max-height: 7.5rem; }
+      .ql-toc li { margin: 0.05rem 0; }
+
+      .ql-body { font-size: 0.92rem; line-height: 1.65; }
+      .ql-sep { margin: 1.4rem 0; }
+      .ql-note { margin-top: 1.2rem; font-size: 0.78rem; }
     }
     /* EPUB 자체 스타일이 고정 폭/색을 지정해도 미리보기가 깨지지 않도록 보정 */
     .ql-body { overflow-wrap: anywhere; }
