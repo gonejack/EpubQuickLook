@@ -348,21 +348,26 @@ public struct PreviewHTMLBuilder {
       color: var(--ql-fg) !important;
       font: 16px/1.75 -apple-system, "SF Pro Text", "Apple SD Gothic Neo", sans-serif;
       -webkit-text-size-adjust: 100%;
+      /* Finder 미리보기 패널처럼 좁은 곳에서 내용이 옆으로 삐져나가지 않게 한다 */
+      overflow-x: hidden;
     }
     .ql-wrap { max-width: 46rem; margin: 0 auto; padding: 2rem 1.6rem 4rem; }
     .ql-header {
-      display: flex; gap: 1.2rem; align-items: flex-start;
+      display: flex; flex-wrap: wrap; gap: 1.2rem; align-items: flex-start;
       background: var(--ql-card); border-radius: 14px;
       padding: 1.1rem 1.2rem; margin-bottom: 1.6rem;
     }
     .ql-cover {
-      width: 116px; height: auto; max-height: 170px; object-fit: contain;
+      width: clamp(80px, 30%, 116px); height: auto; max-height: 170px; object-fit: contain;
       border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,0.25); flex: none;
     }
-    .ql-headmeta { min-width: 0; }
+    /* 제목이 들어갈 자리가 부족하면 표지 아래로 내려간다 */
+    .ql-headmeta { flex: 1 1 11rem; min-width: 0; }
     .ql-headmeta h1 {
       font-size: 1.35rem; line-height: 1.35; margin: 0.1rem 0 0.6rem;
       color: var(--ql-fg); font-weight: 700;
+      /* 한국어는 어절 단위로 끊되, 그래도 넘치면 강제로 줄바꿈한다 */
+      word-break: keep-all; overflow-wrap: anywhere;
     }
     .ql-meta-row { font-size: 0.85rem; color: var(--ql-dim); margin: 0.15rem 0; }
     .ql-meta-row span { display: inline-block; min-width: 3.6rem; }
@@ -386,7 +391,21 @@ public struct PreviewHTMLBuilder {
       margin-top: 2rem; padding: 0.7rem 0.9rem; font-size: 0.85rem;
       color: var(--ql-dim); background: var(--ql-card); border-radius: 10px; text-align: center;
     }
+    /* Finder 미리보기 패널처럼 폭이 아주 좁을 때 */
+    @media (max-width: 430px) {
+      .ql-wrap { padding: 1rem 0.85rem 2.5rem; }
+      .ql-header {
+        flex-direction: column; align-items: center; text-align: center;
+        gap: 0.9rem; padding: 1rem 0.9rem;
+      }
+      .ql-cover { width: min(58%, 130px); max-height: 190px; }
+      .ql-headmeta { flex: none; width: 100%; }
+      .ql-headmeta h1 { font-size: 1.15rem; }
+      .ql-meta-row span { min-width: 0; margin-right: 0.4rem; }
+      .ql-toc { padding: 0.4rem 0.8rem 0.7rem; }
+    }
     /* EPUB 자체 스타일이 고정 폭/색을 지정해도 미리보기가 깨지지 않도록 보정 */
+    .ql-body { overflow-wrap: anywhere; }
     .ql-body img, .ql-body svg, .ql-body image { max-width: 100% !important; height: auto; }
     .ql-body table { max-width: 100%; display: block; overflow-x: auto; }
     .ql-body pre { white-space: pre-wrap; word-break: break-word; }
