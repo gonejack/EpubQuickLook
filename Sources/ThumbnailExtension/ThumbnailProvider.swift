@@ -1,7 +1,7 @@
 import Cocoa
 import QuickLookThumbnailing
 
-/// Finder 아이콘/썸네일을 책 표지로 그린다. 표지가 없으면 제목으로 대체 표지를 만든다.
+/// Draws the book cover as the Finder icon or thumbnail, falling back to a cover generated from the title.
 @objc(ThumbnailProvider)
 final class ThumbnailProvider: QLThumbnailProvider {
 
@@ -19,10 +19,10 @@ final class ThumbnailProvider: QLThumbnailProvider {
             if let size = coverImage?.size, size.width > 0, size.height > 0 {
                 return size.width / size.height
             }
-            return 0.66   // 일반적인 책 표지 비율
+            return 0.66   // Typical book cover aspect ratio
         }()
 
-        // 최대 크기 안에 들어가도록 비율을 유지한 컨텍스트 크기 계산
+        // Fit the drawing context within the maximum size while preserving the aspect ratio.
         var width = maxSize.height * aspect
         var height = maxSize.height
         if width > maxSize.width {
@@ -49,13 +49,13 @@ final class ThumbnailProvider: QLThumbnailProvider {
         handler(reply, nil)
     }
 
-    /// 표지 이미지가 없을 때 제목/지은이를 얹은 단색 표지를 그린다.
+    /// Draws a solid-color cover with the title and author when no cover image is available.
     private static func drawFallbackCover(in context: CGContext, rect: CGRect,
                                           title: String, author: String) {
         context.setFillColor(CGColor(red: 0.20, green: 0.27, blue: 0.38, alpha: 1))
         context.fill(rect)
 
-        // 책등 느낌의 세로 띠
+        // Add a vertical strip to suggest the book spine.
         context.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 0.18))
         context.fill(CGRect(x: 0, y: 0, width: rect.width * 0.08, height: rect.height))
 

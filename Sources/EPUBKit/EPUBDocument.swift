@@ -1,17 +1,17 @@
 import Foundation
 
-/// EPUB 패키지 문서(OPF)를 읽어 메타데이터, 읽기 순서(spine), 표지, 목차를 제공한다.
+/// Reads the EPUB package document (OPF) to provide metadata, reading order (spine), cover, and table of contents.
 public struct EPUBDocument {
     public struct ManifestItem {
         public let id: String
-        public let href: String        // ZIP 내부 절대 경로
+        public let href: String        // Absolute path within the ZIP archive
         public let mediaType: String
         public let properties: String
     }
 
     public struct TOCEntry {
         public let title: String
-        public let href: String        // ZIP 내부 절대 경로 (fragment 제외)
+        public let href: String        // Absolute path within the ZIP archive, excluding the fragment
         public let depth: Int
     }
 
@@ -32,14 +32,14 @@ public struct EPUBDocument {
     public private(set) var toc: [TOCEntry] = []
 
     public var displayTitle: String {
-        title.isEmpty ? "제목 없음" : title
+        title.isEmpty ? "Untitled" : title
     }
 
     public var authorText: String {
         authors.joined(separator: ", ")
     }
 
-    // MARK: - 로드
+    // MARK: - Loading
 
     public init(url: URL) throws {
         try self.init(archive: ZipArchive(url: url))
@@ -72,7 +72,7 @@ public struct EPUBDocument {
 
         spine = package.spineIDRefs.compactMap { manifest[$0] }
         if spine.isEmpty {
-            // spine이 비었으면 manifest의 XHTML을 순서대로 사용 (손상된 EPUB 대비)
+            // Fall back to sorted XHTML manifest entries if a damaged EPUB has an empty spine.
             spine = manifest.values
                 .filter { $0.mediaType.contains("xhtml") || $0.mediaType.contains("html") }
                 .sorted { $0.href < $1.href }
@@ -83,7 +83,7 @@ public struct EPUBDocument {
                                     archive: archive, opfDir: opfDir)
     }
 
-    // MARK: - 리소스 접근
+    // MARK: - Resource Access
 
     public func data(at path: String) -> Data? {
         try? archive.data(for: path)
@@ -94,7 +94,7 @@ public struct EPUBDocument {
         return data(at: coverImagePath)
     }
 
-    /// XHTML 문서를 문자열로 읽는다. 인코딩 선언을 참고해 디코딩한다.
+    /// Reads an XHTML document as a string, trying common encodings if UTF-8 decoding fails.
     public func text(at path: String) -> String? {
         guard let raw = data(at: path) else { return nil }
         if let s = String(data: raw, encoding: .utf8) { return s }
@@ -104,7 +104,7 @@ public struct EPUBDocument {
         return String(decoding: raw, as: UTF8.self)
     }
 
-    // MARK: - 내부 헬퍼
+    // MARK: - Internal Helpers
 
     private static func locateOPF(in archive: ZipArchive) throws -> String {
         if let containerData = try? archive.data(for: "META-INF/container.xml"),
@@ -116,14 +116,14 @@ public struct EPUBDocument {
             if archive.contains(decoded) { return decoded }
             if archive.contains(path) { return path }
         }
-        // container.xml이 없거나 깨진 경우 .opf 파일을 직접 찾는다.
+        // Search for an .opf file directly if container.xml is missing or invalid.
         if let fallback = archive.orderedPaths.first(where: { $0.lowercased().hasSuffix(".opf") }) {
             return fallback
         }
         throw ZipArchive.ZipError.entryNotFound("content.opf")
     }
 
-    /// ZIP 내부 상대 경로를 정규화된 절대 경로로 변환한다.
+    /// Resolves a relative path to a normalized absolute path within the ZIP archive.
     public static func resolve(base: String, relative: String) -> String {
         var rel = relative
         if let decoded = rel.removingPercentEncoding { rel = decoded }
@@ -153,13 +153,13 @@ public struct EPUBDocument {
            item.mediaType.hasPrefix("image"), archive.contains(item.href) {
             return item.href
         }
-        // 3) 파일명 휴리스틱
+        // 3) Filename heuristic
         let candidates = manifest.values.filter { $0.mediaType.hasPrefix("image") }
         if let item = candidates.first(where: { $0.href.lowercased().contains("cover") }),
            archive.contains(item.href) {
             return item.href
         }
-        // 4) 첫 번째 이미지
+        // 4) First image
         return candidates.sorted { $0.href < $1.href }.first(where: { archive.contains($0.href) })?.href
     }
 
@@ -167,7 +167,7 @@ public struct EPUBDocument {
                                  manifest: [String: ManifestItem],
                                  archive: ZipArchive,
                                  opfDir: String) -> [TOCEntry] {
-        // EPUB3 nav 문서 우선
+        // Prefer the EPUB3 navigation document.
         if let nav = manifest.values.first(where: { $0.properties.contains("nav") }),
            let xml = (try? archive.data(for: nav.href)).flatMap({ String(data: $0, encoding: .utf8) }) {
             let navDir = (nav.href as NSString).deletingLastPathComponent
@@ -186,7 +186,7 @@ public struct EPUBDocument {
     }
 
     private static func parseNavXHTML(_ xml: String, baseDir: String) -> [TOCEntry] {
-        // <nav ... epub:type="toc"> 블록 안의 <a href>만 사용
+        // Use only <a href> elements inside the <nav ... epub:type="toc"> block.
         let navRange = range(of: xml, pattern: "<nav[^>]*epub:type\\s*=\\s*[\"'][^\"']*toc[^\"']*[\"'][^>]*>")
         guard let start = navRange else { return [] }
         let tail = String(xml[start.upperBound...])
@@ -254,9 +254,9 @@ public struct EPUBDocument {
     }
 }
 
-// MARK: - OPF 파서
+// MARK: - OPF Parser
 
-/// XMLParser 기반 OPF 파서. 네임스페이스 접두사(dc:, opf:)에 관대하게 동작한다.
+/// An XMLParser-based OPF parser that tolerates namespace prefixes such as dc: and opf:.
 final class OPFParser: NSObject, XMLParserDelegate {
     struct RawManifestItem {
         let id: String
@@ -329,7 +329,7 @@ final class OPFParser: NSObject, XMLParserDelegate {
         case "spine":
             package.spineTocID = attr(attributeDict, "toc")
         case "meta":
-            // EPUB2 표지 지정: <meta name="cover" content="cover-image-id"/>
+            // EPUB2 cover declaration: <meta name="cover" content="cover-image-id"/>
             if let metaName = attr(attributeDict, "name")?.lowercased(), metaName == "cover" {
                 package.metaCoverID = attr(attributeDict, "content")
             }

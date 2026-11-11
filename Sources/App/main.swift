@@ -2,8 +2,8 @@ import Cocoa
 import WebKit
 import UniformTypeIdentifiers
 
-/// 호스트 앱. Quick Look 확장을 담아 시스템에 등록시키는 역할이 주 목적이며,
-/// 확장 없이도 렌더링 결과를 바로 확인할 수 있는 뷰어를 함께 제공한다.
+/// Hosts and registers the Quick Look extensions with the system.
+/// Includes a viewer for checking rendered previews without using the extensions.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
     private var previewWindows: [NSWindow] = []
@@ -12,7 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         buildMenu()
 
-        // 실행 인자로 받은 EPUB은 바로 연다. (예: EPUBQuickLook book.epub)
+        // Open EPUB files passed as command-line arguments (for example, EPUBQuickLook book.epub).
         for argument in CommandLine.arguments.dropFirst() where argument.hasSuffix(".epub") {
             openPreview(URL(fileURLWithPath: argument))
         }
@@ -45,17 +45,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         title.font = .systemFont(ofSize: 22, weight: .semibold)
 
         let body = NSTextField(wrappingLabelWithString: """
-        Finder에서 .epub 파일을 선택하고 스페이스바를 누르면 본문 미리보기가, \
-        아이콘에는 책 표지가 표시됩니다.
+        Select an .epub file in Finder and press the space bar to preview its contents. \
+        The file icon displays the book cover.
 
-        미리보기가 보이지 않으면 이 앱을 응용 프로그램 폴더로 옮긴 뒤 한 번 실행하고, \
-        시스템 설정 › 일반 › 로그인 항목 및 확장 프로그램 › Quick Look에서 활성화되어 있는지 확인하세요.
+        If previews do not appear, move this app to the Applications folder and launch it once. \
+        Then check that its extensions are enabled in System Settings › General › Login Items & Extensions › Quick Look.
         """)
         body.alignment = .center
         body.textColor = .secondaryLabelColor
         body.preferredMaxLayoutWidth = 420
 
-        let openButton = NSButton(title: "EPUB 열어서 미리보기 확인…", target: self,
+        let openButton = NSButton(title: "Open EPUB to Preview…", target: self,
                                   action: #selector(chooseFile))
         openButton.bezelStyle = .rounded
         openButton.keyEquivalent = "\r"
@@ -78,16 +78,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let mainMenu = NSMenu()
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "EPUB 열기…", action: #selector(chooseFile), keyEquivalent: "o")
+        appMenu.addItem(withTitle: "Open EPUB…", action: #selector(chooseFile), keyEquivalent: "o")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "EPUB Quick Look 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Quit EPUB Quick Look", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
 
         let editMenuItem = NSMenuItem()
-        let editMenu = NSMenu(title: "편집")
-        editMenu.addItem(withTitle: "복사", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "전체 선택", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editMenuItem.submenu = editMenu
         mainMenu.addItem(editMenuItem)
 
@@ -127,7 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             previewWindows.append(previewWindow)
         } catch {
             let alert = NSAlert()
-            alert.messageText = "EPUB을 열 수 없습니다."
+            alert.messageText = "Unable to open the EPUB file."
             alert.informativeText = error.localizedDescription
             alert.runModal()
         }
@@ -136,16 +136,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension AppDelegate: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        NSLog("[EPUBQuickLook] 미리보기 로드 완료: %@", webView.url?.absoluteString ?? "nil")
+        NSLog("[EPUBQuickLook] Preview loaded: %@", webView.url?.absoluteString ?? "nil")
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        NSLog("[EPUBQuickLook] 미리보기 로드 실패: %@", error.localizedDescription)
+        NSLog("[EPUBQuickLook] Preview loading failed: %@", error.localizedDescription)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
                  withError error: Error) {
-        NSLog("[EPUBQuickLook] 미리보기 로드 실패(초기): %@", error.localizedDescription)
+        NSLog("[EPUBQuickLook] Initial preview loading failed: %@", error.localizedDescription)
     }
 }
 

@@ -1,107 +1,107 @@
 # EPUB Quick Look
 
-Finder에서 `.epub` 파일을 **스페이스바로 바로 읽을 수 있게** 해주는 macOS Quick Look 확장입니다.
-아이콘에는 책 표지가 표시됩니다.
+A macOS Quick Look extension that lets you **press the space bar to read** an `.epub` file selected in Finder.
+File icons display the book cover, too.
 
-- 📖 **본문 미리보기** — 표지·제목·지은이·출판사와 목차, 그리고 본문을 이어서 보여줍니다
-- 🖼 **표지 썸네일** — Finder 아이콘이 책 표지가 됩니다
-- 📐 **좁은 패널 대응** — Finder 미리보기 패널처럼 좁은 곳에서는 표지와 정보를 압축해 본문에 자리를 내줍니다
-- 🌗 **다크 모드 지원** — 밝은 배경을 전제로 만들어진 EPUB도 어둡게 보정합니다
-- 🔒 **안전** — JavaScript 실행, 외부 링크 이동, 원격 이미지 요청을 모두 차단합니다
-- 📦 **의존성 없음** — ZIP 해제와 EPUB(OPF/NCX/nav) 파싱을 직접 구현했습니다. EPUB 2·3 모두 지원
+- 📖 **Content previews** — Show the cover, title, author, publisher, table of contents, and body in one continuous view
+- 🖼 **Cover thumbnails** — Use book covers as file icons in Finder
+- 📐 **Compact layout** — Shrink the cover and simplify metadata in narrow areas such as the Finder preview panel to leave more room for the body
+- 🌗 **Dark mode support** — Adjust colors for EPUBs originally designed for light backgrounds
+- 🔒 **Security** — Block JavaScript execution, external link navigation, and remote image requests
+- 📦 **No third-party dependencies** — ZIP extraction and EPUB (OPF/NCX/nav) parsing are implemented directly, with support for EPUB 2 and EPUB 3
 
 <br>
 
-## 설치 (릴리스 파일 사용)
+## Install from a Release
 
-1. [Releases](../../releases/latest)에서 `EPUB-Quick-Look.zip`을 내려받아 압축을 풉니다.
-2. `EPUB Quick Look.app`을 **응용 프로그램 폴더**(또는 `~/Applications`)로 옮깁니다.
-3. 터미널에서 격리 속성을 제거합니다. 이 앱은 Apple 공증(notarization)을 받지 않았기 때문에 이 단계가 필요합니다.
+1. Download `EPUB-Quick-Look.zip` from [Releases](../../releases/latest) and extract it.
+2. Move `EPUB Quick Look.app` to your **Applications folder** (or `~/Applications`).
+3. Remove the quarantine attribute in Terminal. This step is required because the app has not been notarized by Apple.
 
    ```bash
    xattr -dr com.apple.quarantine "/Applications/EPUB Quick Look.app"
    ```
 
-4. 앱을 **한 번 실행**합니다. 이때 시스템에 Quick Look 확장이 등록됩니다.
-   (실행 후 앱은 종료해도 됩니다. 확장은 계속 동작합니다.)
-5. Finder에서 `.epub` 파일을 선택하고 **스페이스바**를 눌러보세요.
+4. **Launch the app once** to register the Quick Look extensions with the system.
+   (You can quit the app afterward; the extensions will continue to work.)
+5. Select an `.epub` file in Finder and press the **space bar**.
 
-미리보기가 바로 보이지 않으면:
+If previews do not appear immediately:
 
 ```bash
 qlmanage -r && qlmanage -r cache && killall Finder
 ```
 
-확장이 켜져 있는지는 **시스템 설정 › 일반 › 로그인 항목 및 확장 프로그램 › 훑어보기(Quick Look)** 에서 확인할 수 있습니다.
+Check that the extensions are enabled in **System Settings › General › Login Items & Extensions › Quick Look**.
 
-> **`"손상되었기 때문에 열 수 없습니다"` 라고 나온다면** 3번의 `xattr` 명령을 실행하지 않은 것입니다.
-> 브라우저로 내려받은 파일에 macOS가 격리 딱지를 붙여 생기는 현상이며, 앱 자체 문제가 아닙니다.
+> **If macOS reports that the app “is damaged and can't be opened,”** try the `xattr` command in step 3.
+> macOS adds a quarantine attribute to files downloaded through a browser, which can cause this message.
 
 <br>
 
-## 직접 빌드하기
+## Build from Source
 
-Xcode 명령줄 도구만 있으면 됩니다. 별도 프로젝트 파일이나 패키지 매니저는 필요 없습니다.
+Only the Xcode Command Line Tools are required. No separate project file or package manager is needed.
 
 ```bash
-git clone https://github.com/Oein/epubQuickLook.git
-cd epubQuickLook
+git clone https://github.com/gonejack/EpubQuickLook.git
+cd EpubQuickLook
 
-./build.sh            # build/EPUB Quick Look.app 생성
-./build.sh install    # 빌드 후 ~/Applications 에 설치하고 Quick Look 캐시 갱신
-./build.sh uninstall  # 설치 제거
+./build.sh            # Create build/EPUB Quick Look.app
+./build.sh install    # Build, install to ~/Applications, and refresh the Quick Look cache
+./build.sh uninstall  # Uninstall
 ```
 
-빌드 결과물은 arm64 + x86_64 유니버설 바이너리이며, ad-hoc 서명됩니다.
+The build produces arm64 + x86_64 universal binaries with ad-hoc signatures.
 
 <br>
 
-## 구조
+## Project Structure
 
 ```
 Sources/
-  EPUBKit/                 세 타깃이 공유하는 코어 (외부 의존성 없음)
-    ZipArchive.swift       Compression 프레임워크 기반 ZIP 리더 (store/deflate, ZIP64)
-    EPUBDocument.swift     container.xml → OPF 파싱, 메타데이터·spine·표지·목차
-    PreviewHTMLBuilder.swift  spine을 이어붙인 단일 HTML 미리보기 문서 생성
-  PreviewExtension/        QLPreviewingController — WKWebView 렌더링
-  ThumbnailExtension/      QLThumbnailProvider — 표지 썸네일
-  App/                     호스트 앱 (확장 등록 + 내장 뷰어)
-Resources/                 Info.plist 3종, entitlements 2종
-build.sh                   빌드 · 서명 · 설치 스크립트
+  EPUBKit/                    Core shared by all three targets (no third-party dependencies)
+    ZipArchive.swift          ZIP reader using the Compression framework (store/deflate, ZIP64)
+    EPUBDocument.swift        container.xml → OPF parsing, metadata, spine, cover, and table of contents
+    PreviewHTMLBuilder.swift  Combines the spine into a single HTML preview document
+  PreviewExtension/           QLPreviewingController — renders with WKWebView
+  ThumbnailExtension/         QLThumbnailProvider — cover thumbnails
+  App/                        Host app (extension registration + built-in viewer)
+Resources/                    Three Info.plist files and two entitlements files
+build.sh                      Build, signing, and installation script
 ```
 
-### 동작 방식
+### How It Works
 
-미리보기 확장은 EPUB을 샌드박스 임시 디렉터리에 풀고, spine 순서대로 각 XHTML의 `<body>`를 모아
-하나의 HTML 문서로 합칩니다. 이 과정에서
+The preview extension extracts the EPUB into a temporary directory within the sandbox, collects each XHTML document's `<body>`
+in spine (reading) order, and combines them into a single HTML document. During this process, it:
 
-- 이미지·스타일시트의 상대 경로를 풀어낸 파일의 절대 경로로 바꾸고,
-- 미리보기에 포함된 다른 챕터를 가리키는 링크는 문서 내부 앵커(`#ql-ch-N`)로 바꾸며,
-- `<script>`·`<iframe>`과 원격 리소스 참조는 제거합니다.
+- Rewrites relative image and stylesheet paths as absolute paths to the extracted files.
+- Rewrites links to other included chapters as anchors within the combined document (`#ql-ch-N`).
+- Removes `<script>`, `<iframe>`, and remote resource references.
 
-### 구현 메모
+### Implementation Notes
 
-같은 문제로 시간을 쓰지 않도록 남겨 둡니다.
+These notes record issues encountered during implementation for future reference.
 
-- **샌드박스 앱의 `WKWebView`에는 `com.apple.security.network.client` 권한이 필요합니다.**
-  이 권한이 없으면 로컬 `file://` 문서조차 로드되지 않고, `didFail` 콜백조차 오지 않습니다.
-- **`allowingReadAccessTo:` 에는 심볼릭 링크를 푼 실제 경로를 넘겨야 합니다.**
-  `NSTemporaryDirectory()`는 `/var/folders/...`를 돌려주는데, Foundation의
-  `resolvingSymlinksInPath()`는 `/private` 접두어를 다시 떼어내므로 `realpath(3)`를 씁니다.
-- 앱 확장은 `main` 대신 `NSExtensionMain`이 진입점이라 링크할 때
-  `-Xlinker -e -Xlinker _NSExtensionMain`을 지정합니다.
-
-<br>
-
-## 제한 사항
-
-- DRM이 걸린 EPUB은 열 수 없습니다.
-- 미리보기는 앞부분 최대 100개 문서(약 300만 자)까지만 표시합니다.
-- 고정 레이아웃(fixed-layout) EPUB은 원본 배치 그대로 재현되지 않을 수 있습니다.
+- **`WKWebView` in a sandboxed app requires the `com.apple.security.network.client` entitlement.**
+  Without it, even local `file://` documents fail to load, and the `didFail` callback is not invoked.
+- **Pass a real path with symbolic links resolved to `allowingReadAccessTo:`.**
+  `NSTemporaryDirectory()` returns `/var/folders/...`, while Foundation's
+  `resolvingSymlinksInPath()` removes the `/private` prefix again, so this project uses `realpath(3)`.
+- App extensions use `NSExtensionMain` as their entry point instead of `main`, so linking requires
+  `-Xlinker -e -Xlinker _NSExtensionMain`.
 
 <br>
 
-## 라이선스
+## Limitations
+
+- DRM-protected EPUBs cannot be opened.
+- Previews display only the first 100 documents (approximately 3 million characters).
+- Fixed-layout EPUBs may not preserve their original layout exactly.
+
+<br>
+
+## License
 
 MIT

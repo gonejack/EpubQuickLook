@@ -4,8 +4,8 @@
 <dict>
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
-	<!-- 샌드박스에서 WKWebView는 네트워크 프로세스를 거치므로 이 권한이 없으면
-	     로컬 file:// 문서조차 로드되지 않는다. -->
+	<!-- WKWebView uses a network process in the sandbox. Without this entitlement,
+	     even local file:// documents will not load. -->
 	<key>com.apple.security.network.client</key>
 	<true/>
 	<key>com.apple.security.files.user-selected.read-only</key>

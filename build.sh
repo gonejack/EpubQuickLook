@@ -1,9 +1,9 @@
 #!/bin/bash
-# EPUB Quick Look 빌드 스크립트
+# EPUB Quick Look build script
 #
-#   ./build.sh            빌드만 수행 (build/EPUB Quick Look.app)
-#   ./build.sh install    빌드 후 ~/Applications 에 설치하고 Quick Look 캐시를 갱신
-#   ./build.sh uninstall  설치된 앱 제거
+#   ./build.sh            Build only (build/EPUB Quick Look.app)
+#   ./build.sh install    Build, install to ~/Applications, and refresh the Quick Look cache
+#   ./build.sh uninstall  Remove the installed app
 #
 set -euo pipefail
 
@@ -22,13 +22,13 @@ SWIFTC="$(xcrun --find swiftc)"
 KIT_SOURCES=("$ROOT"/Sources/EPUBKit/*.swift)
 
 uninstall() {
-	echo "==> 설치 제거"
+	echo "==> Uninstalling"
 	rm -rf "$INSTALL_DIR/$APP_NAME.app"
 	/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
 		-kill -r -domain local -domain system -domain user >/dev/null 2>&1 || true
 	qlmanage -r >/dev/null 2>&1 || true
 	qlmanage -r cache >/dev/null 2>&1 || true
-	echo "완료."
+	echo "Done."
 }
 
 if [[ "${1:-}" == "uninstall" ]]; then
@@ -36,9 +36,9 @@ if [[ "${1:-}" == "uninstall" ]]; then
 	exit 0
 fi
 
-# $1: 출력 실행 파일 경로
-# $2: 추가 링커 인자 ("" 또는 확장 엔트리포인트)
-# 나머지: 소스 파일과 -framework 인자
+# $1: Output executable path
+# $2: Additional linker arguments (empty or the extension entry point)
+# Remaining arguments: Source files and -framework arguments
 compile() {
 	local output="$1"; shift
 	local extra_link="$1"; shift
@@ -63,16 +63,16 @@ compile() {
 	strip -x "$output" 2>/dev/null || true
 }
 
-echo "==> 이전 빌드 정리"
+echo "==> Cleaning previous build"
 rm -rf "$BUILD"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/PlugIns"
 
-echo "==> 호스트 앱 빌드"
+echo "==> Building host app"
 compile "$APP/Contents/MacOS/EPUBQuickLook" "" \
 	"${KIT_SOURCES[@]}" "$ROOT/Sources/App/main.swift" \
 	-framework Cocoa -framework WebKit -framework UniformTypeIdentifiers
 
-echo "==> 미리보기 확장 빌드"
+echo "==> Building preview extension"
 PREVIEW="$APP/Contents/PlugIns/EPUBPreviewExtension.appex"
 mkdir -p "$PREVIEW/Contents/MacOS"
 compile "$PREVIEW/Contents/MacOS/EPUBPreviewExtension" \
@@ -80,7 +80,7 @@ compile "$PREVIEW/Contents/MacOS/EPUBPreviewExtension" \
 	"${KIT_SOURCES[@]}" "$ROOT"/Sources/PreviewExtension/*.swift \
 	-framework Cocoa -framework WebKit -framework Quartz
 
-echo "==> 썸네일 확장 빌드"
+echo "==> Building thumbnail extension"
 THUMB="$APP/Contents/PlugIns/EPUBThumbnailExtension.appex"
 mkdir -p "$THUMB/Contents/MacOS"
 compile "$THUMB/Contents/MacOS/EPUBThumbnailExtension" \
@@ -88,14 +88,14 @@ compile "$THUMB/Contents/MacOS/EPUBThumbnailExtension" \
 	"${KIT_SOURCES[@]}" "$ROOT"/Sources/ThumbnailExtension/*.swift \
 	-framework Cocoa -framework QuickLookThumbnailing
 
-echo "==> 번들 구성"
+echo "==> Assembling app bundle"
 cp "$ROOT/Resources/App-Info.plist" "$APP/Contents/Info.plist"
 cp "$ROOT/Resources/Preview-Info.plist" "$PREVIEW/Contents/Info.plist"
 cp "$ROOT/Resources/Thumbnail-Info.plist" "$THUMB/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 rm -rf "$BUILD/obj"
 
-echo "==> 코드 서명 (ad-hoc)"
+echo "==> Signing code (ad-hoc)"
 codesign --force --sign - --timestamp=none \
 	--entitlements "$ROOT/Resources/Extension.entitlements" "$PREVIEW"
 codesign --force --sign - --timestamp=none \
@@ -104,10 +104,10 @@ codesign --force --sign - --timestamp=none \
 	--entitlements "$ROOT/Resources/App.entitlements" "$APP"
 codesign --verify --deep --strict "$APP"
 
-echo "빌드 완료: $APP"
+echo "Build complete: $APP"
 
 if [[ "${1:-}" == "install" ]]; then
-	echo "==> $INSTALL_DIR 에 설치"
+	echo "==> Installing to $INSTALL_DIR"
 	mkdir -p "$INSTALL_DIR"
 	rm -rf "$INSTALL_DIR/$APP_NAME.app"
 	cp -R "$APP" "$INSTALL_DIR/"
@@ -120,6 +120,6 @@ if [[ "${1:-}" == "install" ]]; then
 	qlmanage -r cache >/dev/null 2>&1 || true
 	killall Finder >/dev/null 2>&1 || true
 
-	echo "설치 완료. Finder에서 .epub 파일을 선택하고 스페이스바를 눌러보세요."
-	echo "등록 상태 확인: pluginkit -m -p com.apple.quicklook.preview | grep -i epub"
+	echo "Installation complete. Select an .epub file in Finder and press the space bar."
+	echo "Check registration: pluginkit -m -p com.apple.quicklook.preview | grep -i epub"
 fi

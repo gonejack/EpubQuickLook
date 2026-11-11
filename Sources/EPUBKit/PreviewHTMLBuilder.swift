@@ -1,11 +1,11 @@
 import Foundation
 
-/// EPUB을 임시 디렉터리에 풀고, spine 순서대로 이어붙인 단일 HTML 미리보기 문서를 만든다.
+/// Extracts an EPUB to a temporary directory and combines its spine into a single HTML preview document.
 public struct PreviewHTMLBuilder {
     public struct Output {
-        /// WKWebView에 로드할 HTML 파일
+        /// The HTML file to load in WKWebView.
         public let htmlURL: URL
-        /// 읽기 권한을 부여해야 하는 루트 디렉터리(리소스 포함)
+        /// The root directory, including resources, for which read access must be granted.
         public let rootURL: URL
         public let chapterCount: Int
         public let truncated: Bool
@@ -26,7 +26,7 @@ public struct PreviewHTMLBuilder {
         self.limits = limits
     }
 
-    // MARK: - 빌드
+    // MARK: - Building
 
     public func build() throws -> Output {
         let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
@@ -37,16 +37,16 @@ public struct PreviewHTMLBuilder {
     public func build(in requestedRoot: URL) throws -> Output {
         try document.archive.extractAll(to: requestedRoot, maxTotalBytes: limits.maxExtractedBytes)
 
-        // WKWebView는 로드할 파일이 allowingReadAccessTo 경로 아래에 있는지 실제 경로로 판단한다.
-        // NSTemporaryDirectory()는 /var/folders/...(심볼릭 링크)를 돌려주고 Foundation의
-        // resolvingSymlinksInPath()는 /private 접두어를 다시 떼어내므로 realpath(3)를 쓴다.
+        // WKWebView checks real paths to ensure the loaded file is under allowingReadAccessTo.
+        // NSTemporaryDirectory() returns /var/folders/... through a symbolic link, and Foundation's
+        // resolvingSymlinksInPath() removes the /private prefix again, so use realpath(3).
         let root = Self.realPath(requestedRoot)
 
         var styleLinks: [String] = []
         var seenStyles = Set<String>()
         var truncated = false
 
-        // 1차: 본문만 모은다. 챕터 간 링크를 앵커로 바꾸려면 포함될 문서 목록이 먼저 필요하다.
+        // First pass: collect chapter bodies to identify included documents before rewriting links as anchors.
         var rawChapters: [(href: String, baseDir: String, body: String)] = []
         var totalChars = 0
 
@@ -67,8 +67,8 @@ public struct PreviewHTMLBuilder {
 
             var body = Self.blockRemoteResources(Self.stripDangerousTags(Self.extractBody(from: raw)))
 
-            // 앞쪽 표지 페이지는 헤더의 표지와 겹치므로 그림을 걷어내고,
-            // 그래서 아무것도 남지 않으면 그 페이지 자체를 건너뛴다.
+            // Remove leading cover images that duplicate the header cover.
+            // Skip the entire page if nothing remains afterward.
             if rawChapters.isEmpty {
                 body = Self.removeCoverImage(from: body, baseDir: baseDir,
                                              coverPath: document.coverImagePath)
@@ -79,13 +79,13 @@ public struct PreviewHTMLBuilder {
             rawChapters.append((item.href, baseDir, body))
         }
 
-        // ZIP 경로 → 합쳐진 문서에서의 챕터 인덱스
+        // Map ZIP paths to chapter indexes in the combined document.
         var chapterAnchors: [String: Int] = [:]
         for (index, chapter) in rawChapters.enumerated() {
             chapterAnchors[chapter.href] = index
         }
 
-        // 2차: 리소스 경로와 내부 링크를 재작성한다.
+        // Second pass: rewrite resource paths and internal links.
         let chapters: [String] = rawChapters.enumerated().map { index, chapter in
             let body = Self.rewriteURLs(in: chapter.body, baseDir: chapter.baseDir, root: root,
                                         archive: document.archive, chapterAnchors: chapterAnchors)
@@ -111,7 +111,7 @@ public struct PreviewHTMLBuilder {
                       chapterCount: chapters.count, truncated: truncated)
     }
 
-    // MARK: - 문서 조립
+    // MARK: - Document Assembly
 
     private func renderDocument(root: URL,
                                 styleLinks: [String],
@@ -131,14 +131,14 @@ public struct PreviewHTMLBuilder {
             <div class="ql-meta-row ql-meta-\(key)"><span>\(label)</span><b>\(Self.escape(trimmed))</b></div>
             """)
         }
-        // key는 좁은 폭에서 어떤 항목을 남길지 CSS로 고르기 위한 것이다.
-        row("지은이", document.authorText, "author")
-        row("출판사", document.publisher, "publisher")
-        row("출간일", document.date, "date")
-        row("언어", document.language, "language")
-        row("분량", "\(document.spine.count)개 문서", "count")
+        // Keys let CSS select which fields remain visible at narrow widths.
+        row("Author", document.authorText, "author")
+        row("Publisher", document.publisher, "publisher")
+        row("Published", document.date, "date")
+        row("Language", document.language, "language")
+        row("Length", "\(document.spine.count) documents", "count")
 
-        // 목차: spine에 실제로 존재하는 항목만
+        // Include only table of contents entries present in the rendered spine.
         var tocItems: [String] = []
         var usedIndexes = Set<Int>()
         for entry in document.toc {
@@ -148,7 +148,7 @@ public struct PreviewHTMLBuilder {
         }
         let tocBlock = tocItems.isEmpty ? "" : """
         <nav class="ql-toc">
-          <h2>목차</h2>
+          <h2>Contents</h2>
           <ol>\(tocItems.joined())</ol>
         </nav>
         """
@@ -157,16 +157,16 @@ public struct PreviewHTMLBuilder {
             "<p class=\"ql-desc\">\(Self.escape(EPUBDocument.stripTags(document.bookDescription)))</p>"
 
         let truncatedNote = truncated ? """
-        <p class="ql-note">미리보기는 앞부분 \(chapters.count)개 문서만 표시합니다.</p>
+        <p class="ql-note">This preview shows only the first \(chapters.count) documents.</p>
         """ : ""
 
         let emptyNote = chapters.isEmpty ? """
-        <p class="ql-note">본문을 읽을 수 없습니다. 파일이 손상되었거나 DRM으로 보호되어 있을 수 있습니다.</p>
+        <p class="ql-note">Unable to read the contents. The file may be damaged or protected by DRM.</p>
         """ : ""
 
         return """
         <!DOCTYPE html>
-        <html lang="\(document.language.isEmpty ? "ko" : Self.escape(document.language))">
+        <html lang="\(document.language.isEmpty ? "en" : Self.escape(document.language))">
         <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -196,12 +196,12 @@ public struct PreviewHTMLBuilder {
         """
     }
 
-    // MARK: - HTML 가공 유틸
+    // MARK: - HTML Processing Utilities
 
     static func extractBody(from html: String) -> String {
         guard let openRange = html.range(of: "<body[^>]*>", options: [.regularExpression, .caseInsensitive])
         else {
-            // body 태그가 없으면 head를 제거한 전체를 사용
+            // If there is no body tag, use the entire document with the head removed.
             return html.replacingOccurrences(of: "<head[\\s\\S]*?</head>", with: "",
                                              options: [.regularExpression, .caseInsensitive])
         }
@@ -230,7 +230,7 @@ public struct PreviewHTMLBuilder {
         return result
     }
 
-    /// 스크립트 등 미리보기에서 실행될 필요가 없는 태그를 제거한다.
+    /// Removes tags such as scripts that do not need to execute in a preview.
     static func stripDangerousTags(_ html: String) -> String {
         var out = html
         for pattern in ["<script[\\s\\S]*?</script>", "<iframe[\\s\\S]*?</iframe>", "<object[\\s\\S]*?</object>"] {
@@ -240,8 +240,8 @@ public struct PreviewHTMLBuilder {
         return out
     }
 
-    /// 헤더에 이미 띄운 표지와 같은 그림을 본문에서 걷어낸다.
-    /// EPUB 첫 페이지는 대개 표지 이미지 한 장이라, 그대로 두면 같은 그림이 연달아 두 번 나온다.
+    /// Removes body images that duplicate the cover already displayed in the header.
+    /// The first EPUB page is often just a cover image, which would otherwise appear twice in succession.
     static func removeCoverImage(from body: String, baseDir: String, coverPath: String?) -> String {
         guard let coverPath else { return body }
 
@@ -259,7 +259,7 @@ public struct PreviewHTMLBuilder {
         }
 
         var out = body
-        // <img>는 태그만, SVG로 감싼 표지는 <svg> 블록째로 지운다.
+        // Remove individual <img> tags or the entire <svg> block for SVG-wrapped covers.
         for pattern in ["<img\\b[^>]*>", "<svg\\b[\\s\\S]*?</svg>"] {
             guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
                 continue
@@ -279,7 +279,7 @@ public struct PreviewHTMLBuilder {
         return out
     }
 
-    /// 그림도 글도 남지 않은 껍데기 페이지인지 확인한다.
+    /// Checks whether a page has no text or media left.
     static func isEmptyPage(_ body: String) -> Bool {
         guard EPUBDocument.stripTags(body).isEmpty else { return false }
         let hasVisual = body.range(of: "<(img|svg|image|video|audio)\\b",
@@ -287,9 +287,9 @@ public struct PreviewHTMLBuilder {
         return !hasVisual
     }
 
-    /// 원격 리소스를 참조하는 속성을 무력화한다.
-    /// 미리보기를 여는 것만으로 외부 서버에 요청이 나가는 일(추적 픽셀 등)을 막는다.
-    /// 링크(`<a href>`)는 그대로 두되, 미리보기에서는 어차피 열리지 않는다.
+    /// Disables attributes that reference remote resources.
+    /// Prevents external requests, such as tracking pixels, when opening a preview.
+    /// Leaves links (<a href>) intact; the preview navigation policy blocks external navigation.
     static func blockRemoteResources(_ html: String) -> String {
         var out = html
         out = out.replacingOccurrences(
@@ -306,8 +306,8 @@ public struct PreviewHTMLBuilder {
     private static let skipPrefixes = ["http://", "https://", "data:", "file:", "mailto:",
                                        "javascript:", "tel:", "//", "#"]
 
-    /// 문서 내 상대 경로를 추출된 임시 디렉터리의 file URL로 바꾼다.
-    /// 미리보기에 포함된 다른 챕터를 가리키는 링크는 합쳐진 문서 내부의 앵커로 바꾼다.
+    /// Converts relative document paths to file URLs in the extracted temporary directory.
+    /// Rewrites links to other included chapters as anchors within the combined document.
     static func rewriteURLs(in html: String, baseDir: String, root: URL,
                             archive: ZipArchive,
                             chapterAnchors: [String: Int] = [:]) -> String {
@@ -331,7 +331,7 @@ public struct PreviewHTMLBuilder {
                     let pathPart = value.components(separatedBy: "#")[0]
                     let resolved = EPUBDocument.resolve(base: baseDir, relative: pathPart)
                     if let chapter = chapterAnchors[resolved] {
-                        // 미리보기에 이미 포함된 챕터 → 문서 내부 앵커로
+                        // Rewrite links to included chapters as internal document anchors.
                         result += wrap(ns.substring(with: whole), "#ql-ch-\(chapter)")
                     } else if archive.contains(resolved) {
                         result += wrap(ns.substring(with: whole), fileURLString(root: root, path: resolved))
@@ -345,7 +345,7 @@ public struct PreviewHTMLBuilder {
             out = result
         }
 
-        // 속성값: src="...", href='...', xlink:href="...", poster="..."
+        // Attribute values: src="...", href='...', xlink:href="...", poster="..."
         replaceAll(pattern: "(?:src|href|xlink:href|poster)\\s*=\\s*[\"']([^\"']*)[\"']",
                    valueGroup: 1) { whole, url in
             guard let eq = whole.firstIndex(of: "=") else { return whole }
@@ -353,14 +353,14 @@ public struct PreviewHTMLBuilder {
             return "\(attrName)=\"\(url)\""
         }
 
-        // 인라인 CSS의 url(...) — style 속성 안에서도 깨지지 않도록 홑따옴표로 감싼다.
+        // Wrap inline CSS url(...) values in single quotes so they also work inside style attributes.
         replaceAll(pattern: "url\\(\\s*[\"']?([^\"')]+)[\"']?\\s*\\)",
                    valueGroup: 1) { _, url in "url('\(url)')" }
 
         return out
     }
 
-    /// 심볼릭 링크를 모두 푼 실제 경로. 실패하면 원래 URL을 그대로 돌려준다.
+    /// Resolves all symbolic links to a real path, returning the original URL on failure.
     static func realPath(_ url: URL) -> URL {
         guard let resolved = realpath(url.path, nil) else { return url }
         defer { free(resolved) }
@@ -379,7 +379,7 @@ public struct PreviewHTMLBuilder {
             .replacingOccurrences(of: "\"", with: "&quot;")
     }
 
-    // MARK: - 미리보기 전용 스타일
+    // MARK: - Preview Styles
 
     static let previewCSS = """
     :root {
@@ -405,9 +405,9 @@ public struct PreviewHTMLBuilder {
       margin: 0; padding: 0;
       background: var(--ql-bg) !important;
       color: var(--ql-fg) !important;
-      font: 16px/1.75 -apple-system, "SF Pro Text", "Apple SD Gothic Neo", sans-serif;
+      font: 16px/1.75 -apple-system, "SF Pro Text", sans-serif;
       -webkit-text-size-adjust: 100%;
-      /* Finder 미리보기 패널처럼 좁은 곳에서 내용이 옆으로 삐져나가지 않게 한다 */
+      /* Prevent horizontal overflow in narrow areas such as the Finder preview panel. */
       overflow-x: hidden;
     }
     .ql-wrap { max-width: 46rem; margin: 0 auto; padding: 2rem 1.6rem 4rem; }
@@ -420,12 +420,12 @@ public struct PreviewHTMLBuilder {
       width: clamp(80px, 30%, 116px); height: auto; max-height: 170px; object-fit: contain;
       border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,0.25); flex: none;
     }
-    /* 제목이 들어갈 자리가 부족하면 표지 아래로 내려간다 */
+    /* Move the title below the cover when there is not enough room. */
     .ql-headmeta { flex: 1 1 11rem; min-width: 0; }
     .ql-headmeta h1 {
       font-size: 1.35rem; line-height: 1.35; margin: 0.1rem 0 0.6rem;
       color: var(--ql-fg); font-weight: 700;
-      /* 한국어는 어절 단위로 끊되, 그래도 넘치면 강제로 줄바꿈한다 */
+      /* Preserve word boundaries, wrapping within a word only to prevent overflow. */
       word-break: keep-all; overflow-wrap: anywhere;
     }
     .ql-meta-row { font-size: 0.85rem; color: var(--ql-dim); margin: 0.15rem 0; }
@@ -450,19 +450,18 @@ public struct PreviewHTMLBuilder {
       margin-top: 2rem; padding: 0.7rem 0.9rem; font-size: 0.85rem;
       color: var(--ql-dim); background: var(--ql-card); border-radius: 10px; text-align: center;
     }
-    /* 목차가 수십 개인 책에서 본문이 한참 아래로 밀리지 않도록 자체 스크롤.
-       아래쪽을 흐리게 처리해 더 많은 항목이 있다는 것을 알린다. */
+    /* Scroll long tables of contents separately so they do not push the body far down.
+       Fade the bottom edge to indicate that more entries are available. */
     .ql-toc ol {
       max-height: 22rem; overflow-y: auto;
       -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.6rem), transparent);
     }
 
     /*
-     * Finder 미리보기 패널처럼 폭이 좁을 때의 컴팩트 레이아웃.
-     * 이런 패널은 폭이 250pt 남짓이고 높이도 짧아서, 표지와 제목이 화면을 다 먹으면
-     * 정작 본문이 보이지 않는다. 표지를 작게 줄여 한 줄로 붙이고, 반복되는 라벨을
-     * 없앤 뒤, 남는 공간을 본문에 넘긴다. 파일명·용량은 Finder가 패널 아래에
-     * 따로 보여주므로 여기서 다시 강조할 이유가 없다.
+     * Compact layout for narrow areas such as the Finder preview panel.
+     * At roughly 250pt wide with limited height, a large cover and title would hide the body.
+     * Use a smaller cover beside the title and omit repeated labels to make room for text.
+     * Finder already shows the file name and size below the panel, so they need no extra emphasis.
      */
     @media (max-width: 430px) {
       .ql-wrap { padding: 0.9rem 0.8rem 2rem; }
@@ -475,16 +474,16 @@ public struct PreviewHTMLBuilder {
       .ql-headmeta { flex: 1 1 auto; }
       .ql-headmeta h1 {
         font-size: 0.98rem; line-height: 1.4; margin: 0 0 0.3rem;
-        /* 긴 제목은 세 줄까지만 */
+        /* Limit long titles to three lines. */
         display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
         overflow: hidden;
       }
-      /* 라벨을 떼고 가운뎃점으로 이어 붙여 한 덩어리로 만든다 */
+      /* Omit labels and join metadata values with middle dots. */
       .ql-meta-row { display: inline; font-size: 0.76rem; line-height: 1.45; }
       .ql-meta-row span { display: none; }
       .ql-meta-row b { font-weight: 400; color: var(--ql-dim); }
       .ql-meta-row + .ql-meta-row::before { content: " · "; color: var(--ql-dim); }
-      /* 좁은 곳에서는 지은이 · 출간일 · 분량만 남긴다 */
+      /* Keep only the author, publication date, and document count at narrow widths. */
       .ql-meta-language, .ql-meta-publisher, .ql-desc { display: none; }
 
       .ql-toc { padding: 0.3rem 0.7rem 0.55rem; margin-bottom: 1.2rem; border-radius: 9px; }
@@ -496,7 +495,7 @@ public struct PreviewHTMLBuilder {
       .ql-sep { margin: 1.4rem 0; }
       .ql-note { margin-top: 1.2rem; font-size: 0.78rem; }
     }
-    /* EPUB 자체 스타일이 고정 폭/색을 지정해도 미리보기가 깨지지 않도록 보정 */
+    /* Keep fixed widths and colors in the EPUB's own styles from breaking the preview. */
     .ql-body { overflow-wrap: anywhere; }
     .ql-body img, .ql-body svg, .ql-body image { max-width: 100% !important; height: auto; }
     .ql-body table { max-width: 100%; display: block; overflow-x: auto; }
@@ -506,7 +505,7 @@ public struct PreviewHTMLBuilder {
     }
     .ql-body a { color: var(--ql-accent); }
     @media (prefers-color-scheme: dark) {
-      /* 밝은 배경을 전제로 작성된 EPUB CSS를 다크모드에서 중화한다 */
+      /* Override EPUB styles designed for light backgrounds when using dark mode. */
       .ql-body *:not(img):not(svg):not(image) {
         background-color: transparent !important;
         color: var(--ql-fg) !important;

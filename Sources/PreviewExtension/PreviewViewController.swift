@@ -2,7 +2,7 @@ import Cocoa
 import QuickLookUI
 import WebKit
 
-/// Quick Look 미리보기 본체. EPUB을 HTML로 변환해 WKWebView로 보여준다.
+/// Converts EPUB files to HTML and displays them in a WKWebView for Quick Look previews.
 @objc(PreviewViewController)
 final class PreviewViewController: NSViewController, QLPreviewingController {
 
@@ -44,7 +44,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
     // MARK: - QLPreviewingController
 
     func preparePreviewOfFile(at url: URL) async throws {
-        // 파싱과 압축 해제는 백그라운드에서 수행한다.
+        // Parse and extract the archive in the background.
         let result: Result<PreviewHTMLBuilder.Output, Error> = await Task.detached(priority: .userInitiated) {
             do {
                 let document = try EPUBDocument(url: url)
@@ -60,7 +60,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
             temporaryDirectory = output.rootURL
             webView.loadFileURL(output.htmlURL, allowingReadAccessTo: output.rootURL)
         case .failure(let error):
-            showMessage("EPUB을 열 수 없습니다.\n\(error.localizedDescription)")
+            showMessage("Unable to open the EPUB file.\n\(error.localizedDescription)")
             throw error
         }
     }
@@ -78,13 +78,13 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
     }
 }
 
-// MARK: - 내비게이션 제한
+// MARK: - Navigation Restrictions
 
 extension PreviewViewController: WKNavigationDelegate {
     func webView(_ webView: WKWebView,
                  decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        // 미리보기에서는 최초 로드와 같은 문서 내 앵커 이동만 허용한다.
+        // Allow only the initial load and anchor navigation within the same document.
         switch navigationAction.navigationType {
         case .linkActivated:
             let isSameDocumentAnchor = navigationAction.request.url?.fragment != nil
