@@ -9,6 +9,7 @@ File icons display the book cover, too.
 - 🌗 **Dark mode support** — Adjust colors for EPUBs originally designed for light backgrounds
 - 🔒 **Security** — Block JavaScript execution, external link navigation, and remote image requests
 - 📦 **No third-party dependencies** — ZIP extraction and EPUB (OPF/NCX/nav) parsing are implemented directly, with support for EPUB 2 and EPUB 3
+- 💤 **Quit on close** — The app quits when its last window closes, and hidden Quick Look previews release their WebView
 
 <br>
 
@@ -25,6 +26,10 @@ File icons display the book cover, too.
 4. **Launch the app once** to register the Quick Look extensions with the system.
    (You can quit the app afterward; the extensions will continue to work.)
 5. Select an `.epub` file in Finder and press the **space bar**.
+
+The app does not need to keep running for Finder previews or thumbnails to work. Closing the last app window quits it.
+Closing a reader window releases its WebView and removes its temporary files. Quick Look also releases its WebView when
+the preview disappears; macOS manages the lifetime of extension processes and may cache an idle process afterward.
 
 If previews do not appear immediately:
 

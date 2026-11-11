@@ -4,9 +4,9 @@ import UniformTypeIdentifiers
 
 /// Hosts and registers the Quick Look extensions with the system.
 /// Includes a viewer for checking rendered previews without using the extensions.
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var window: NSWindow!
-    private var previewWindows: [NSWindow] = []
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+    private var window: NSWindow?
+    private var previewWindows: [NSWindow: URL] = [:]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -17,9 +17,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             openPreview(URL(fileURLWithPath: argument))
         }
 
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 380),
-                          styleMask: [.titled, .closable, .miniaturizable],
-                          backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 380),
+                              styleMask: [.titled, .closable, .miniaturizable],
+                              backing: .buffered, defer: false)
+        self.window = window
+        window.delegate = self
+        window.isReleasedWhenClosed = false
         window.title = "EPUB Quick Look"
         window.center()
         window.contentView = makeContentView()
@@ -27,7 +30,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        for (previewWindow, rootURL) in previewWindows {
+            releasePreview(in: previewWindow, rootURL: rootURL)
+        }
+        previewWindows.removeAll()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let closedWindow = notification.object as? NSWindow else { return }
+        if let rootURL = previewWindows.removeValue(forKey: closedWindow) {
+            releasePreview(in: closedWindow, rootURL: rootURL)
+        }
+        if closedWindow === window { window = nil }
+    }
+
+    private func releasePreview(in window: NSWindow, rootURL: URL) {
+        if let webView = window.contentView as? WKWebView {
+            webView.stopLoading()
+            webView.navigationDelegate = nil
+        }
+        window.contentView = nil
+        try? FileManager.default.removeItem(at: rootURL)
+    }
 
     func application(_ application: NSApplication, open urls: [URL]) {
         urls.forEach(openPreview)
@@ -50,6 +77,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         If previews do not appear, move this app to the Applications folder and launch it once. \
         Then check that its extensions are enabled in System Settings › General › Login Items & Extensions › Quick Look.
+
+        Closing the last window quits this app. Finder previews continue to work.
         """)
         body.alignment = .center
         body.textColor = .secondaryLabelColor
@@ -122,9 +151,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             previewWindow.title = document.displayTitle
             previewWindow.contentView = webView
             previewWindow.center()
+            previewWindow.delegate = self
             previewWindow.isReleasedWhenClosed = false
+            previewWindows[previewWindow] = output.rootURL
             previewWindow.makeKeyAndOrderFront(nil)
-            previewWindows.append(previewWindow)
         } catch {
             let alert = NSAlert()
             alert.messageText = "Unable to open the EPUB file."
